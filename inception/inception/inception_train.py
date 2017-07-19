@@ -230,7 +230,7 @@ def train(dataset):
     tower_grads = []
     reuse_variables = None
     for i in range(FLAGS.num_gpus):
-      with tf.device('/gpu:%d' % i):
+      with tf.device('/cpu:%d' % i):
         with tf.name_scope('%s_%d' % (inception.TOWER_NAME, i)) as scope:
           # Force all Variables to reside on the CPU.
           with slim.arg_scope([slim.variables.variable], device='/cpu:0'):
@@ -312,9 +312,29 @@ def train(dataset):
     # Start running operations on the Graph. allow_soft_placement must be set to
     # True to build towers on GPU, as some of the ops do not have GPU
     # implementations.
-    sess = tf.Session(config=tf.ConfigProto(
-        allow_soft_placement=True,
-        log_device_placement=FLAGS.log_device_placement))
+    #sess = tf.Session(config=tf.ConfigProto(
+    #    allow_soft_placement=True,
+    #    log_device_placement=FLAGS.log_device_placement))
+    import os
+    if (os.getenv('NUM_INTER_THREADS', None) is not None and
+        os.getenv('NUM_INTRA_THREADS', None) is not None):
+       
+       print("Custom NERSC/Intel config: inter_op_parallelism_threads({}),"
+              " intra_op_parallelism_threads({}), log_placement({})".format(
+               os.environ['NUM_INTER_THREADS'],
+               os.environ['NUM_INTRA_THREADS'],
+	       FLAGS.log_device_placement))
+       sess = tf.Session(config=tf.ConfigProto(
+          allow_soft_placement=True,
+          log_device_placement=FLAGS.log_device_placement,
+          device_count = {'GPU': 0, 'CPU':FLAGS.num_gpus},
+          inter_op_parallelism_threads=int(os.environ['NUM_INTER_THREADS']),
+          intra_op_parallelism_threads=int(os.environ['NUM_INTRA_THREADS'])))
+    else:
+        sess = tf.Session(config=tf.ConfigProto(
+          allow_soft_placement=True,
+          device_count = {'GPU': 0, 'CPU':FLAGS.num_gpus},
+          log_device_placement=FLAGS.log_device_placement))
     sess.run(init)
 
     if FLAGS.pretrained_model_checkpoint_path:
@@ -333,13 +353,45 @@ def train(dataset):
         FLAGS.train_dir,
         graph=sess.graph)
 
+    print("Entering the step run loop")
+    print("Current session config: {}".format(sess._config))
     for step in range(FLAGS.max_steps):
       start_time = time.time()
-      _, loss_value = sess.run([train_op, loss])
+      config_options = None
+      run_metadata = None      
+      if step==10:
+      	config_options = tf.RunOptions(trace_level = 3)
+        run_metadata = tf.RunMetadata()
+        print("Step #{}, capturing internal execution trace".format(step))
+        
+      _, loss_value = sess.run([train_op, loss], options=config_options,
+       				run_metadata=run_metadata)
+      #_, loss_value = sess.run([train_op, loss])
       duration = time.time() - start_time
 
       assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
-
+      if run_metadata is not None:
+        print("Extracting metadata of current traning run.")
+        from tensorflow.python.client import timeline
+        import os
+        job_id=os.getenv("SLURM_JOB_ID", None)
+        job_name=os.getenv("SLURM_JOB_NAME", None)
+        if job_id is None or job_name is None:
+          print("Cannot retrieve job id or job name, using default.")
+          trace_file_name="timeline.ctf.json"
+        else:
+          trace_file_name="timeline_st{}_{}_{}.ctf.json".format(step,
+                                                  job_name, job_id)        
+        trace_folder=os.getenv("TRACES_FOLDER", 
+                               os.getenv("SLURM_SUBMIT_DIR",
+                                          os.getcwd())+"/traces")
+        trace_file_name=trace_folder+"/"+trace_file_name                 
+        trace = timeline.Timeline(step_stats=run_metadata.step_stats)  	  
+        print("Writing data in file: {}".format(trace_file_name))
+        trace_file = open(trace_file_name, 'w')
+        trace_file.write(trace.generate_chrome_trace_format())
+        trace_file.close()
+        print("Metadata dumped in timeline.ctf.json")
       if step % 10 == 0:
         examples_per_sec = FLAGS.batch_size / float(duration)
         format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f '
