@@ -178,6 +178,22 @@ def _average_gradients(tower_grads):
   return average_grads
 
 
+def data_create_graph(dataset, num_preprocess_threads):
+    graph = tf.Graph()
+    with graph.as_default(), tf.device('/cpu:0'):
+        num_preprocess_threads = FLAGS.num_preprocess_threads * FLAGS.num_gpus
+        images, labels = image_processing.distorted_inputs(dataset,
+                                num_preprocess_threads=num_preprocess_threads)
+        split_batch_size = int(FLAGS.batch_size / FLAGS.num_gpus)
+        images_splits = tf.split(axis=0, num_or_size_splits=FLAGS.num_gpus,
+                                 value=images)
+        labels_splits = tf.split(axis=0, num_or_size_splits=FLAGS.num_gpus,
+                                 value=labels)
+    return graph
+def train_create_graph(graph):
+    
+    pass
+
 def train(dataset):
   """Train on dataset for a number of steps."""
   with tf.Graph().as_default(), tf.device('/cpu:0'):
