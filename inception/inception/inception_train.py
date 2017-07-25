@@ -391,6 +391,7 @@ def train(dataset):
         trace_file = open(trace_file_name, 'w')
         trace_file.write(trace.generate_chrome_trace_format())
         trace_file.close()
+        del run_metadata
         print("Metadata dumped in timeline.ctf.json")
       if step % 10 == 0:
         examples_per_sec = FLAGS.batch_size / float(duration)
