@@ -56,6 +56,10 @@ tf.app.flags.DEFINE_string('pretrained_model_checkpoint_path', '',
                            """If specified, restore this pretrained model """
                            """before beginning any training.""")
 
+tf.app.flags.DEFINE_boolean('train_trace', True,
+                            """If set, it produces an a trace of the threads
+                            executing work during the training phase.""")
+
 # **IMPORTANT**
 # Please note that this learning rate schedule is heavily dependent on the
 # hardware architecture, batch size and any changes to the model architecture
@@ -359,7 +363,7 @@ def train(dataset):
       start_time = time.time()
       config_options = None
       run_metadata = None      
-      if step==10:
+      if step==10 and FLAGS.train_trace:
       	config_options = tf.RunOptions(trace_level = 3)
         run_metadata = tf.RunMetadata()
         print("Step #{}, capturing internal execution trace".format(step))
