@@ -60,6 +60,10 @@ tf.app.flags.DEFINE_boolean('train_trace', True,
                             """If set, it produces an a trace of the threads
                             executing work during the training phase.""")
 
+tf.app.flags.DEFINE_boolean('do_checkpoint', False,
+                            """If set, an execution checkpoint is done after
+                            the first step and once every 5000 steps.""")
+
 # **IMPORTANT**
 # Please note that this learning rate schedule is heavily dependent on the
 # hardware architecture, batch size and any changes to the model architecture
@@ -409,6 +413,7 @@ def train(dataset):
         summary_writer.add_summary(summary_str, step)
 
       # Save the model checkpoint periodically.
-      if step % 5000 == 0 or (step + 1) == FLAGS.max_steps:
-        checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
-        saver.save(sess, checkpoint_path, global_step=step)
+      if FLAGS.do_checkpoint:
+        if step % 5000 == 0 or (step + 1) == FLAGS.max_steps:
+          checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
+          saver.save(sess, checkpoint_path, global_step=step)
